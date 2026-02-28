@@ -1,0 +1,16 @@
+# --- 專案產出的數據 ---
+okx_data/
+raw_tmp/
+parquet/
+
+# --- 編譯產出的執行檔 ---
+# Windows 的執行檔
+*.exe
+# Mac/Linux 的執行檔 (通常你編譯時會取名為這個)
+okx_L2_trade
+
+# --- 作業系統產生的雜物 ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
