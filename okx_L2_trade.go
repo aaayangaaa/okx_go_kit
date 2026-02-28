@@ -47,6 +47,14 @@ var httpClient = &http.Client{Timeout: 120 * time.Second}
 // ─────────────────────────────────────────
 // Struct
 // ─────────────────────────────────────────
+// Trade row (parquet schema)
+type TradeRow struct {
+    Ts    int64   `parquet:"ts"`
+    Side  string  `parquet:"side"`
+    Px    float32 `parquet:"px"`
+    Sz    float32 `parquet:"sz"`
+    TradeId string `parquet:"tradeId"`
+}
 
 type DownloadLink struct {
     Filename string
@@ -217,7 +225,7 @@ func writeOrderbookRowsToParquet(rows []OrderbookRow, path string) (int, error) 
     }
     defer f.Close()
 
-    w := parquet.NewGenericWriter[OrderbookRow](f, parquet.Snappy)
+    w := parquet.NewGenericWriter[OrderbookRow](f, parquet.Compression(&parquet.Snappy))
     n, err := w.Write(rows)
     if err != nil {
         return n, err
@@ -229,42 +237,67 @@ func writeOrderbookRowsToParquet(rows []OrderbookRow, path string) (int, error) 
 type CSVRow map[string]string
 
 func writeCSVToParquet(records [][]string, headers []string, path string) (int, error) {
-    // Build schema dynamically from headers
-    // Use string columns for all fields (simplest safe approach)
-    schema := parquet.SchemaOf(new(struct{}))
-    _ = schema
-
-    // Use raw parquet writer with string schema
-    type DynRow = map[string]interface{}
-
-    rows := make([]DynRow, 0, len(records))
-    for _, rec := range records {
-        row := make(DynRow, len(headers))
-        for i, h := range headers {
-            if i < len(rec) {
-                row[h] = rec[i]
-            } else {
-                row[h] = ""
-            }
-        }
-        rows = append(rows, row)
+    if len(records) == 0 {
+        return 0, nil
     }
 
-    // Write using parquet-go generic writer with map schema
+    // 建立索引地圖，確保對應到正確的 CSV 欄位
+    colMap := make(map[string]int)
+    for i, h := range headers {
+        colMap[strings.ToLower(h)] = i
+    }
+
+    rows := make([]TradeRow, 0, len(records))
+    for _, rec := range records {
+        var tr TradeRow
+        
+        // 解析時間戳
+        if idx, ok := colMap["ts"]; ok && idx < len(rec) {
+            tr.Ts, _ = strconv.ParseInt(rec[idx], 10, 64)
+        } else if idx, ok := colMap["timestamp"]; ok && idx < len(rec) {
+            tr.Ts, _ = strconv.ParseInt(rec[idx], 10, 64)
+        }
+
+        // 解析價格與數量
+        if idx, ok := colMap["px"]; ok && idx < len(rec) {
+            tr.Px = toFloat32(rec[idx])
+        } else if idx, ok := colMap["price"]; ok && idx < len(rec) {
+            tr.Px = toFloat32(rec[idx])
+        }
+
+        if idx, ok := colMap["sz"]; ok && idx < len(rec) {
+            tr.Sz = toFloat32(rec[idx])
+        } else if idx, ok := colMap["size"]; ok && idx < len(rec) {
+            tr.Sz = toFloat32(rec[idx])
+        }
+
+        // 解析方向與 ID
+        if idx, ok := colMap["side"]; ok && idx < len(rec) {
+            tr.Side = rec[idx]
+        }
+        if idx, ok := colMap["tradeid"]; ok && idx < len(rec) {
+            tr.TradeId = rec[idx]
+        }
+
+        rows = append(rows, tr)
+    }
+
     f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
     if err != nil {
         return 0, err
     }
     defer f.Close()
 
-    w := parquet.NewGenericWriter[DynRow](f, parquet.Snappy)
+    // 使用具體類型 TradeRow，這與 Orderbook 的邏輯一致，穩定且快速
+    w := parquet.NewGenericWriter[TradeRow](f, parquet.Compression(&parquet.Snappy))
     n, err := w.Write(rows)
     if err != nil {
         return n, err
     }
-    return n, w.Close()
-}
 
+    err = w.Close()
+    return n, err
+}
 // ─────────────────────────────────────────
 // Orderbook NDJSON parser
 // ─────────────────────────────────────────
