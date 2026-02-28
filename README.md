@@ -1,9 +1,4 @@
-# okx_go_kit
-
-A high-performance Go toolkit for downloading and converting OKX historical market data (Level-2 order book snapshots and trade records) into Parquet format for efficient offline analysis.
-
----
-
+# okx_go_kit - historical data research- L2 and tbt trade
 ## Table of Contents
 
 - [Overview](#overview)
